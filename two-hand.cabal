@@ -21,6 +21,7 @@ common common
     -Wno-missing-local-signatures
     -Wno-safe
     -Wno-missing-safe-haskell-mode
+    -Wno-missing-deriving-strategies
 
 library
   import: common
