@@ -4,6 +4,4 @@
 
 {not [x ((x false) true)]}
 
-{print [b ((b True) False)]}
-
-{main (print (not true))}
+{main (not true)}

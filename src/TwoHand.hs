@@ -1,4 +1,17 @@
-module TwoHand () where
+module TwoHand
+  ( parse,
+    check,
+    eval,
+    display,
+    Program (..),
+    Def (..),
+    Exp (..),
+    Fun (..),
+    App (..),
+    Var (..),
+    Name,
+  )
+where
 
 import Combinators (matchM, plus, satisfyM, star, try, (<<|>>), (|>>))
 import Control.Arrow (arr)
@@ -6,8 +19,8 @@ import Control.Monad (void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.Char (isSpace)
-import Data.List.Extra (firstJust)
-import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.Extra (firstJust, intercalate)
+import Data.List.NonEmpty (NonEmpty (..), toList)
 import Data.Maybe (fromJust, mapMaybe)
 import Parser (Parser, runParser)
 import Stream (takeToken)
@@ -208,3 +221,23 @@ resolve :: Name -> [Def] -> Maybe Exp
 resolve name = firstJust $ \case
   Def defName exp | name == defName -> Just exp
   _ -> Nothing
+
+--------------------------------------------------------------------------------
+
+display :: Program -> String
+display = \case
+  Program defs -> intercalate "\n" (map displayDef defs)
+  ProgramResult exp -> displayExp exp
+  _ -> undefined
+
+displayDef :: Def -> String
+displayDef = \case
+  Def name exp -> "{" <> toList name <> " " <> displayExp exp <> "}"
+  _ -> undefined
+
+displayExp :: Exp -> String
+displayExp = \case
+  FunE (Fun param body) -> "[" <> toList param <> " " <> displayExp body <> "]"
+  AppE (App l r) -> "(" <> displayExp l <> " " <> displayExp r <> ")"
+  VarE (Var name) -> toList name
+  _ -> undefined
