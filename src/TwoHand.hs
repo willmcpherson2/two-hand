@@ -6,14 +6,17 @@ import Control.Monad (void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.Char (isSpace)
-import Data.List.NonEmpty (NonEmpty)
-import Data.Maybe (mapMaybe)
+import Data.List.Extra (firstJust)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Maybe (fromJust, mapMaybe)
 import Parser (Parser, runParser)
 import Stream (takeToken)
 
 data Program
   = Program [Def]
+  | ProgramResult Exp
   | ProgramExcess String
+  | ProgramNoMain
   deriving (Show)
 
 data Def
@@ -46,6 +49,8 @@ data Var
   deriving (Show, Eq)
 
 type Name = NonEmpty Char
+
+--------------------------------------------------------------------------------
 
 parse :: String -> Program
 parse = snd . runParser parseProgram
@@ -168,3 +173,38 @@ checkVar names = \case
       then Var name
       else VarNotFound
   var -> var
+
+--------------------------------------------------------------------------------
+
+eval :: Program -> Program
+eval = \case
+  Program defs -> case resolve ('m' :| "ain") defs of
+    Just exp -> ProgramResult $ evalExp defs exp
+    Nothing -> ProgramNoMain
+  program -> program
+
+evalExp :: [Def] -> Exp -> Exp
+evalExp defs exp = case exp of
+  AppE (App l r) -> case l of
+    FunE (Fun param body) -> evalExp defs (substitute param r body)
+    AppE (App l' r') ->
+      evalExp defs (AppE $ App (evalExp defs (AppE $ App l' r')) r)
+    VarE (Var name) ->
+      evalExp defs (AppE $ App (fromJust $ resolve name defs) r)
+    _ -> exp
+  VarE (Var name) -> evalExp defs (fromJust $ resolve name defs)
+  _ -> exp
+
+substitute :: Name -> Exp -> Exp -> Exp
+substitute param value body = case body of
+  FunE (Fun param' body')
+    | param /= param' -> FunE $ Fun param' (substitute param value body')
+  AppE (App l r) ->
+    AppE $ App (substitute param value l) (substitute param value r)
+  VarE (Var name) | param == name -> value
+  _ -> body
+
+resolve :: Name -> [Def] -> Maybe Exp
+resolve name = firstJust $ \case
+  Def defName exp | name == defName -> Just exp
+  _ -> Nothing
