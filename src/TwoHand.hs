@@ -7,6 +7,7 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.Char (isSpace)
 import Data.List.NonEmpty (NonEmpty)
+import Data.Maybe (mapMaybe)
 import Parser (Parser, runParser)
 import Stream (takeToken)
 
@@ -39,7 +40,10 @@ data App
   | AppNoClose String
   deriving (Show)
 
-type Var = Name
+data Var
+  = Var Name
+  | VarNotFound
+  deriving (Show, Eq)
 
 type Name = NonEmpty Char
 
@@ -77,7 +81,7 @@ parseExp = do
   s <- arr id
   (fmap FunE <$> try parseFun)
     <<|>> (fmap AppE <$> try parseApp)
-    <<|>> (fmap VarE <$> try parseName)
+    <<|>> (fmap VarE <$> try parseVar)
     |>> pure (ExpNoExp s)
 
 parseFun :: Parser String (Maybe Fun)
@@ -111,9 +115,56 @@ parseApp = runMaybeT $ do
       Nothing -> pure $ AppNoClose s
       Just {} -> pure $ App l r
 
+parseVar :: Parser String (Maybe Var)
+parseVar = do
+  name <- parseName
+  pure $ Var <$> name
+
 parseName :: Parser String (Maybe Name)
 parseName = runMaybeT . MaybeT . plus . try . satisfyM $ \ch ->
   ch `notElem` "()[]{}" && not (isSpace ch)
 
 skipSpace :: Parser String ()
 skipSpace = void $ star $ try $ satisfyM isSpace
+
+--------------------------------------------------------------------------------
+
+check :: Program -> Program
+check = \case
+  Program defs -> Program $ map (checkDef (namesInDefs defs)) defs
+  program -> program
+
+namesInDefs :: [Def] -> [Name]
+namesInDefs = mapMaybe $ \case
+  Def name _ -> Just name
+  _ -> Nothing
+
+checkDef :: [Name] -> Def -> Def
+checkDef names = \case
+  Def name exp -> Def name (checkExp names exp)
+  def -> def
+
+checkExp :: [Name] -> Exp -> Exp
+checkExp names = \case
+  FunE fun -> FunE (checkFun names fun)
+  AppE app -> AppE (checkApp names app)
+  VarE var -> VarE (checkVar names var)
+  exp -> exp
+
+checkFun :: [Name] -> Fun -> Fun
+checkFun names = \case
+  Fun param body -> Fun param (checkExp (param : names) body)
+  fun -> fun
+
+checkApp :: [Name] -> App -> App
+checkApp names = \case
+  App l r -> App (checkExp names l) (checkExp names r)
+  app -> app
+
+checkVar :: [Name] -> Var -> Var
+checkVar names = \case
+  Var name ->
+    if name `elem` names
+      then Var name
+      else VarNotFound
+  var -> var
