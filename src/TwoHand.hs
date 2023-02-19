@@ -392,7 +392,7 @@ diagnose = \case
   ParensNoClose s -> mk s "parenthesis not closed"
   BracketsNoClose s -> mk s "bracket not closed"
   BracesNoClose s -> mk s "brace not closed"
-  ProgramNoMain s -> mk s "program has no main"
+  ProgramNoMain _ -> "warning: program has no main, nothing to evaluate"
   VarNotFound s -> mk s "variable not defined"
   NoHands s -> mk s "no hands"
   OneHand s -> mk s "one hand"
