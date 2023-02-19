@@ -392,17 +392,48 @@ collectName = \case
 
 diagnose :: Err -> String
 diagnose = \case
-  ParensNoClose s -> errMsg s "parenthesis not closed"
-  BracketsNoClose s -> errMsg s "bracket not closed"
-  BracesNoClose s -> errMsg s "brace not closed"
-  ProgramNoMain _ -> "warning: program has no main, nothing to evaluate"
-  VarNotFound s -> errMsg s "variable not defined"
-  NoHands s -> errMsg s "no hands"
-  OneHand s -> errMsg s "one hand"
-  TooManyHands s -> errMsg s "too many hands"
-  DefExpected s -> errMsg s "expected definition"
-  NameExpected s -> errMsg s "expected identifier"
-  ExpExpected s -> errMsg s "expected expression"
+  ParensNoClose s -> errMsg s "Parenthesis not closed."
+  BracketsNoClose s -> errMsg s "Bracket not closed."
+  BracesNoClose s -> errMsg s "Brace not closed."
+  ProgramNoMain _ ->
+    "Program has no main - nothing to evaluate.\n\
+    \Define a main, e.g. {main [x x]}"
+  VarNotFound s ->
+    errMsg
+      s
+      "Variable not defined.\n\
+      \All variables must either reference a paramater in a function e.g. [x x]\n\
+      \or a definition e.g. {id [x x]} {main (id id)}"
+  NoHands s ->
+    errMsg
+      s
+      "Expression has no hands - program is unsound.\n\
+      \All expressions should have two hands, e.g. (f x)"
+  OneHand s ->
+    errMsg
+      s
+      "Expression has one hand - program is unsound.\n\
+      \All expressions should have two hands, e.g. (f x)"
+  TooManyHands s ->
+    errMsg
+      s
+      "Expression has too many hands - program is unsound.\n\
+      \All expressions should have two hands, e.g. (f x)"
+  DefExpected s ->
+    errMsg
+      s
+      "Expected a definition.\n\
+      \e.g. {main [x x]}"
+  NameExpected s ->
+    errMsg
+      s
+      "Expected an identifier.\n\
+      \e.g. foo"
+  ExpExpected s ->
+    errMsg
+      s
+      "Expected an expression.\n\
+      \Supply a function [x x], application (f x) or variable."
 
 errMsg :: Source -> String -> String
 errMsg (prev, next) msg =
