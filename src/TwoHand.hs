@@ -3,14 +3,18 @@ module TwoHand
     parse,
     check,
     eval,
-    display,
+    Source,
+    SourceOf (..),
+    Display (..),
+    Err (..),
+    Tree (..),
     Program (..),
     Def (..),
     Exp (..),
     Fun (..),
     App (..),
     Var (..),
-    Name,
+    Name (..),
   )
 where
 
@@ -20,7 +24,7 @@ import Control.Monad (void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.Char (isSpace)
-import Data.List.Extra (firstJust, intercalate)
+import Data.List.Extra (firstJust)
 import Data.List.NonEmpty (NonEmpty (..), toList)
 import Data.Maybe (fromJust, mapMaybe)
 import Parser (Parser)
@@ -293,40 +297,57 @@ resolve name = firstJust $ \case
 
 --------------------------------------------------------------------------------
 
-display :: Program -> String
-display = \case
-  Program _ defs -> intercalate "\n" (map displayDef defs)
-  ProgramResult exp -> displayExp exp
-  ProgramErr err -> displayErr err
+class Display a where
+  display :: a -> String
 
-displayDef :: Def -> String
-displayDef = \case
-  Def _ name exp -> "{" <> displayName name <> " " <> displayExp exp <> "}"
-  DefErr err -> displayErr err
+instance Display Err where
+  display err = "<" <> show err <> ">"
 
-displayExp :: Exp -> String
-displayExp = \case
-  FunE fun -> displayFun fun
-  AppE app -> displayApp app
-  VarE var -> displayVar var
-  ExpErr err -> displayErr err
+instance Display [Tree] where
+  display = unlines . map display
 
-displayFun = \case
-  Fun _ param body -> "[" <> displayName param <> " " <> displayExp body <> "]"
-  FunErr err -> displayErr err
+instance Display Tree where
+  display = \case
+    Parens _ trees -> "(" <> unwords (map display trees) <> ")"
+    Brackets _ trees -> "[" <> unwords (map display trees) <> "]"
+    Braces _ trees -> "{" <> unwords (map display trees) <> "}"
+    TreeName name -> display name
+    TreeErr err -> display err
 
-displayApp = \case
-  App _ l r -> "(" <> displayExp l <> " " <> displayExp r <> ")"
-  AppErr err -> displayErr err
+instance Display Program where
+  display = \case
+    Program _ defs -> unlines $ map display defs
+    ProgramResult exp -> display exp
+    ProgramErr err -> display err
 
-displayVar = \case
-  Var name -> displayName name
-  VarErr err -> displayErr err
+instance Display Def where
+  display = \case
+    Def _ name exp -> "{" <> display name <> " " <> display exp <> "}"
+    DefErr err -> display err
 
-displayName :: Name -> String
-displayName = \case
-  Name _ name -> toList name
-  NameErr err -> displayErr err
+instance Display Exp where
+  display = \case
+    FunE fun -> display fun
+    AppE app -> display app
+    VarE var -> display var
+    ExpErr err -> display err
 
-displayErr :: Err -> String
-displayErr err = "<" <> show err <> ">"
+instance Display Fun where
+  display = \case
+    Fun _ param body -> "[" <> display param <> " " <> display body <> "]"
+    FunErr err -> display err
+
+instance Display App where
+  display = \case
+    App _ l r -> "(" <> display l <> " " <> display r <> ")"
+    AppErr err -> display err
+
+instance Display Var where
+  display = \case
+    Var name -> display name
+    VarErr err -> display err
+
+instance Display Name where
+  display = \case
+    Name _ name -> toList name
+    NameErr err -> display err

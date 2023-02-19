@@ -2,7 +2,8 @@ module Main (main) where
 
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
-import TwoHand (check, display, eval, parse)
+import TwoHand (Display (..), check, eval, lex, parse)
+import Prelude hiding (lex)
 
 main :: IO ()
 main =
@@ -15,12 +16,17 @@ main =
 
 report :: String -> IO ()
 report s = do
-  let parsed = parse s
+  let lexed = lex s
+      parsed = parse lexed
       checked = check parsed
       result = eval checked
 
   putStrLn "source:"
   putStrLn s
+  putStrLn ""
+
+  putStrLn "lex:"
+  putStrLn $ display lexed
   putStrLn ""
 
   putStrLn "parse:"
