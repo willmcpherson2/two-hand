@@ -83,11 +83,7 @@ Result: `[hello [world [! !]]]`
 
 {if [bool [a [b ((bool a) b)]]]}
 
-{a [a a]}
-
-{b [b b]}
-
-{main (((if (not true)) a) b)}
+{main (((if (not true)) [a a]) [b b])}
 ```
 
 Result: `[b b]`
