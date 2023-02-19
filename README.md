@@ -87,3 +87,71 @@ Result: `[hello [world [! !]]]`
 ```
 
 Result: `[b b]`
+
+> But what about data structures?
+
+```
+{nil [_ [x x]]}
+
+{cons [x [xs
+  [f [_ ((f x) xs)]]]]}
+
+{map [f [xs
+  ((xs
+    [x [xs ((cons (f x)) ((map f) xs))]])
+    nil)]]}
+
+{last [xs
+  ((xs
+    [x [xs
+      ((xs
+        [_ [_ (last xs)]])
+        x)]])
+    nil)]}
+
+{true [x [y x]]}
+
+{false [x [y y]]}
+
+{not [x ((x false) true)]}
+
+{trues ((cons true) ((cons true) nil))}
+
+{main (last ((map not) trues))}
+```
+
+Result: `[x [y y]]`
+
+> But what about numbers?
+
+```
+{0 [f [x x]]}
+
+{1+ [n
+  [f [x (f n)]]]}
+
+{+ [x [y
+  ((x
+    [n (1+ ((+ n) y))])
+    y)]]}
+
+{true [x [y x]]}
+
+{false [x [y y]]}
+
+{> [x [y
+  ((x
+    [n
+      ((y
+        [m ((> n) m)])
+        true)])
+    false)]]}
+
+{1 (1+ 0)}
+
+{2 ((+ 1) 1)}
+
+{main ((> 2) 1)}
+```
+
+Result: `[x [y x]]`
