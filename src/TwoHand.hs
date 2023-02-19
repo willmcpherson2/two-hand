@@ -1,5 +1,6 @@
 module TwoHand
-  ( parse,
+  ( lex,
+    parse,
     check,
     eval,
     display,
@@ -13,7 +14,7 @@ module TwoHand
   )
 where
 
-import Combinators (matchM, plus, satisfyM, star, try, (<<|>>), (|>>))
+import Combinators (endWith, matchM, plus, satisfyM, star, try, (<<|>>))
 import Control.Arrow (arr)
 import Control.Monad (void)
 import Control.Monad.Trans.Class (lift)
@@ -22,144 +23,212 @@ import Data.Char (isSpace)
 import Data.List.Extra (firstJust, intercalate)
 import Data.List.NonEmpty (NonEmpty (..), toList)
 import Data.Maybe (fromJust, mapMaybe)
-import Parser (Parser, runParser)
-import Stream (takeToken)
+import Parser (Parser)
+import qualified Parser as P
+import Prelude hiding (lex)
+
+type Source = String
+
+class SourceOf a where
+  sourceOf :: a -> Source
+
+--------------------------------------------------------------------------------
+
+data Err
+  = ParensNoClose Source
+  | BracketsNoClose Source
+  | BracesNoClose Source
+  | ProgramNoMain Source
+  | VarNotFound Source
+  | NoHands Source
+  | OneHand Source
+  | TooManyHands Source
+  | DefExpected Source
+  | NameExpected Source
+  | ExpExpected Source
+  deriving (Show)
+
+instance SourceOf Err where
+  sourceOf = \case
+    ParensNoClose s -> s
+    BracketsNoClose s -> s
+    BracesNoClose s -> s
+    ProgramNoMain s -> s
+    VarNotFound s -> s
+    NoHands s -> s
+    OneHand s -> s
+    TooManyHands s -> s
+    DefExpected s -> s
+    NameExpected s -> s
+    ExpExpected s -> s
+
+--------------------------------------------------------------------------------
+
+data Name
+  = Name Source (NonEmpty Char)
+  | NameErr Err
+  deriving (Show)
+
+instance Eq Name where
+  Name _ a == Name _ b = a == b
+  _ == _ = False
+
+instance SourceOf Name where
+  sourceOf = \case
+    Name s _ -> s
+    NameErr err -> sourceOf err
+
+--------------------------------------------------------------------------------
+
+data Tree
+  = Parens Source [Tree]
+  | Brackets Source [Tree]
+  | Braces Source [Tree]
+  | TreeName Name
+  | TreeErr Err
+  deriving (Show)
+
+instance SourceOf Tree where
+  sourceOf = \case
+    Parens s _ -> s
+    Brackets s _ -> s
+    Braces s _ -> s
+    TreeName name -> sourceOf name
+    TreeErr err -> sourceOf err
+
+--------------------------------------------------------------------------------
+
+lex :: String -> [Tree]
+lex = P.parse lexTrees
+
+lexTrees :: Parser String [Tree]
+lexTrees = star lexTree
+
+lexTree :: Parser String (Maybe Tree)
+lexTree = do
+  skipSpaces
+  lexParens
+    <<|>> lexBrackets
+    <<|>> lexBraces
+    <<|>> lexWord
+
+skipSpaces :: Parser String ()
+skipSpaces = void . star . try $ satisfyM isSpace
+
+lexParens :: Parser String (Maybe Tree)
+lexParens = mkLexer '(' ')' Parens ParensNoClose
+
+lexBrackets :: Parser String (Maybe Tree)
+lexBrackets = mkLexer '[' ']' Brackets BracketsNoClose
+
+lexBraces :: Parser String (Maybe Tree)
+lexBraces = mkLexer '{' '}' Braces BracesNoClose
+
+lexWord :: Parser String (Maybe Tree)
+lexWord = runMaybeT $ do
+  s <- lift $ arr id
+  name <- MaybeT . plus . try . satisfyM $ \ch ->
+    ch `notElem` "()[]{}" && not (isSpace ch)
+  pure $ TreeName $ Name s name
+
+mkLexer ::
+  Char ->
+  Char ->
+  (Source -> [Tree] -> Tree) ->
+  (Source -> Err) ->
+  Parser String (Maybe Tree)
+mkLexer open close ok err = runMaybeT $ do
+  s <- lift $ arr id
+  MaybeT $ try $ matchM open
+  lift $ do
+    lexTree `endWith` matchM close >>= \case
+      Nothing -> pure $ TreeErr $ err s
+      Just inner -> pure $ ok s inner
+
+--------------------------------------------------------------------------------
 
 data Program
-  = Program [Def]
+  = Program Source [Def]
   | ProgramResult Exp
-  | ProgramExcess String
-  | ProgramNoMain
+  | ProgramErr Err
   deriving (Show)
 
 data Def
-  = Def Name Exp
-  | DefNoName String
-  | DefNoClose String
+  = Def Source Name Exp
+  | DefErr Err
   deriving (Show)
 
 data Exp
   = FunE Fun
   | AppE App
   | VarE Var
-  | ExpNoExp String
+  | ExpErr Err
   deriving (Show)
 
 data Fun
-  = Fun Name Exp
-  | FunNoParam String
-  | FunNoClose String
+  = Fun Source Name Exp
+  | FunErr Err
   deriving (Show)
 
 data App
-  = App Exp Exp
-  | AppNoClose String
+  = App Source Exp Exp
+  | AppErr Err
   deriving (Show)
 
 data Var
   = Var Name
-  | VarNotFound
-  deriving (Show, Eq)
-
-type Name = NonEmpty Char
+  | VarErr Err
+  deriving (Show)
 
 --------------------------------------------------------------------------------
 
-parse :: String -> Program
-parse = snd . runParser parseProgram
+parse :: [Tree] -> Program
+parse trees = Program "" (map parseDef trees)
 
-parseProgram :: Parser String Program
-parseProgram = do
-  defs <- star $ skipSpace *> parseDef
-  s <- arr id
-  takeToken >>= \case
-    Just {} -> pure $ ProgramExcess s
-    Nothing -> pure $ Program defs
+parseDef :: Tree -> Def
+parseDef = \case
+  Braces s trees -> case trees of
+    [] -> DefErr $ NoHands s
+    [_] -> DefErr $ OneHand s
+    [name, exp] -> Def s (parseName name) (parseExp exp)
+    _ -> DefErr $ TooManyHands s
+  tree -> DefErr $ DefExpected (sourceOf tree)
 
-parseDef :: Parser String (Maybe Def)
-parseDef = runMaybeT $ do
-  MaybeT $ try $ matchM '{'
-  lift $ do
-    skipSpace
-    s <- arr id
-    parseName >>= \case
-      Nothing -> pure $ DefNoName s
-      Just name -> do
-        skipSpace
-        exp <- parseExp
-        skipSpace
-        s <- arr id
-        matchM '}' >>= \case
-          Nothing -> pure $ DefNoClose s
-          Just {} -> pure $ Def name exp
+parseName :: Tree -> Name
+parseName = \case
+  TreeName name -> name
+  tree -> NameErr $ NameExpected (sourceOf tree)
 
-parseExp :: Parser String Exp
-parseExp = do
-  skipSpace
-  s <- arr id
-  (fmap FunE <$> try parseFun)
-    <<|>> (fmap AppE <$> try parseApp)
-    <<|>> (fmap VarE <$> try parseVar)
-    |>> pure (ExpNoExp s)
-
-parseFun :: Parser String (Maybe Fun)
-parseFun = runMaybeT $ do
-  MaybeT . try . matchM $ '['
-  lift $ do
-    skipSpace
-    s <- arr id
-    parseName >>= \case
-      Nothing -> pure $ FunNoParam s
-      Just param -> do
-        skipSpace
-        body <- parseExp
-        skipSpace
-        s <- arr id
-        matchM ']' >>= \case
-          Nothing -> pure $ FunNoClose s
-          Just {} -> pure $ Fun param body
-
-parseApp :: Parser String (Maybe App)
-parseApp = runMaybeT $ do
-  MaybeT . try . matchM $ '('
-  lift $ do
-    skipSpace
-    l <- parseExp
-    skipSpace
-    r <- parseExp
-    skipSpace
-    s <- arr id
-    matchM ')' >>= \case
-      Nothing -> pure $ AppNoClose s
-      Just {} -> pure $ App l r
-
-parseVar :: Parser String (Maybe Var)
-parseVar = do
-  name <- parseName
-  pure $ Var <$> name
-
-parseName :: Parser String (Maybe Name)
-parseName = runMaybeT . MaybeT . plus . try . satisfyM $ \ch ->
-  ch `notElem` "()[]{}" && not (isSpace ch)
-
-skipSpace :: Parser String ()
-skipSpace = void $ star $ try $ satisfyM isSpace
+parseExp :: Tree -> Exp
+parseExp = \case
+  Parens s trees -> AppE $ case trees of
+    [] -> AppErr $ NoHands s
+    [_] -> AppErr $ OneHand s
+    [l, r] -> App s (parseExp l) (parseExp r)
+    _ -> AppErr $ TooManyHands s
+  Brackets s trees -> FunE $ case trees of
+    [] -> FunErr $ NoHands s
+    [_] -> FunErr $ OneHand s
+    [param, body] -> Fun s (parseName param) (parseExp body)
+    _ -> FunErr $ TooManyHands s
+  TreeName name -> VarE $ Var name
+  tree -> ExpErr $ ExpExpected (sourceOf tree)
 
 --------------------------------------------------------------------------------
 
 check :: Program -> Program
 check = \case
-  Program defs -> Program $ map (checkDef (namesInDefs defs)) defs
+  Program s defs -> Program s (map (checkDef $ namesInDefs defs) defs)
   program -> program
 
 namesInDefs :: [Def] -> [Name]
 namesInDefs = mapMaybe $ \case
-  Def name _ -> Just name
+  Def _ name _ -> Just name
   _ -> Nothing
 
 checkDef :: [Name] -> Def -> Def
 checkDef names = \case
-  Def name exp -> Def name (checkExp names exp)
+  Def s name exp -> Def s name (checkExp names exp)
   def -> def
 
 checkExp :: [Name] -> Exp -> Exp
@@ -171,12 +240,12 @@ checkExp names = \case
 
 checkFun :: [Name] -> Fun -> Fun
 checkFun names = \case
-  Fun param body -> Fun param (checkExp (param : names) body)
+  Fun s param body -> Fun s param (checkExp (param : names) body)
   fun -> fun
 
 checkApp :: [Name] -> App -> App
 checkApp names = \case
-  App l r -> App (checkExp names l) (checkExp names r)
+  App s l r -> App s (checkExp names l) (checkExp names r)
   app -> app
 
 checkVar :: [Name] -> Var -> Var
@@ -184,60 +253,80 @@ checkVar names = \case
   Var name ->
     if name `elem` names
       then Var name
-      else VarNotFound
+      else VarErr $ VarNotFound (sourceOf name)
   var -> var
 
 --------------------------------------------------------------------------------
 
 eval :: Program -> Program
 eval = \case
-  Program defs -> case resolve ('m' :| "ain") defs of
+  Program s defs -> case resolve ('m' :| "ain") defs of
     Just exp -> ProgramResult $ evalExp defs exp
-    Nothing -> ProgramNoMain
+    Nothing -> ProgramErr $ ProgramNoMain s
   program -> program
 
 evalExp :: [Def] -> Exp -> Exp
 evalExp defs exp = case exp of
-  AppE (App l r) -> case l of
-    FunE (Fun param body) -> evalExp defs (substitute param r body)
-    AppE (App l' r') ->
-      evalExp defs (AppE $ App (evalExp defs (AppE $ App l' r')) r)
-    VarE (Var name) ->
-      evalExp defs (AppE $ App (fromJust $ resolve name defs) r)
+  AppE (App s l r) -> case l of
+    FunE (Fun _ param body) -> evalExp defs (substitute param r body)
+    AppE (App s' l' r') ->
+      evalExp defs (AppE $ App s (evalExp defs (AppE $ App s' l' r')) r)
+    VarE (Var (Name _ name)) ->
+      evalExp defs (AppE $ App s (fromJust $ resolve name defs) r)
     _ -> exp
-  VarE (Var name) -> evalExp defs (fromJust $ resolve name defs)
+  VarE (Var (Name _ name)) -> evalExp defs (fromJust $ resolve name defs)
   _ -> exp
 
 substitute :: Name -> Exp -> Exp -> Exp
 substitute param value body = case body of
-  FunE (Fun param' body')
-    | param /= param' -> FunE $ Fun param' (substitute param value body')
-  AppE (App l r) ->
-    AppE $ App (substitute param value l) (substitute param value r)
+  FunE (Fun s param' body')
+    | param /= param' -> FunE $ Fun s param' (substitute param value body')
+  AppE (App s l r) ->
+    AppE $ App s (substitute param value l) (substitute param value r)
   VarE (Var name) | param == name -> value
   _ -> body
 
-resolve :: Name -> [Def] -> Maybe Exp
+resolve :: NonEmpty Char -> [Def] -> Maybe Exp
 resolve name = firstJust $ \case
-  Def defName exp | name == defName -> Just exp
+  Def _ (Name _ defName) exp | name == defName -> Just exp
   _ -> Nothing
 
 --------------------------------------------------------------------------------
 
 display :: Program -> String
 display = \case
-  Program defs -> intercalate "\n" (map displayDef defs)
+  Program _ defs -> intercalate "\n" (map displayDef defs)
   ProgramResult exp -> displayExp exp
-  _ -> undefined
+  ProgramErr err -> displayErr err
 
 displayDef :: Def -> String
 displayDef = \case
-  Def name exp -> "{" <> toList name <> " " <> displayExp exp <> "}"
-  _ -> undefined
+  Def _ name exp -> "{" <> displayName name <> " " <> displayExp exp <> "}"
+  DefErr err -> displayErr err
 
 displayExp :: Exp -> String
 displayExp = \case
-  FunE (Fun param body) -> "[" <> toList param <> " " <> displayExp body <> "]"
-  AppE (App l r) -> "(" <> displayExp l <> " " <> displayExp r <> ")"
-  VarE (Var name) -> toList name
-  _ -> undefined
+  FunE fun -> displayFun fun
+  AppE app -> displayApp app
+  VarE var -> displayVar var
+  ExpErr err -> displayErr err
+
+displayFun = \case
+  Fun _ param body -> "[" <> displayName param <> " " <> displayExp body <> "]"
+  FunErr err -> displayErr err
+
+displayApp = \case
+  App _ l r -> "(" <> displayExp l <> " " <> displayExp r <> ")"
+  AppErr err -> displayErr err
+
+displayVar = \case
+  Var name -> displayName name
+  VarErr err -> displayErr err
+
+displayName :: Name -> String
+displayName = \case
+  Name _ name -> toList name
+  NameErr err -> displayErr err
+
+displayErr :: Err -> String
+displayErr err = "<" <> show err <> ">"
