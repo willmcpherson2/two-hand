@@ -1,8 +1,18 @@
 module Main (main) where
 
+import Data.List (intercalate)
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
-import TwoHand (Display (..), check, eval, lex, parse)
+import TwoHand
+  ( Display (..),
+    Program (..),
+    check,
+    collect,
+    diagnose,
+    eval,
+    lex,
+    parse,
+  )
 import Prelude hiding (lex)
 
 main :: IO ()
@@ -19,23 +29,11 @@ report s = do
   let lexed = lex s
       parsed = parse lexed
       checked = check parsed
+      errs = collect checked
       result = eval checked
-
-  putStrLn "source:"
-  putStrLn s
-  putStrLn ""
-
-  putStrLn "lex:"
-  putStrLn $ display lexed
-  putStrLn ""
-
-  putStrLn "parse:"
-  putStrLn $ display parsed
-  putStrLn ""
-
-  putStrLn "check:"
-  putStrLn $ display checked
-  putStrLn ""
-
-  putStrLn "eval:"
-  putStrLn $ display result
+  case errs of
+    [] -> case result of
+      ProgramResult exp -> putStrLn $ display exp
+      ProgramErr err -> putStrLn $ diagnose err
+      Program _ _ -> undefined
+    errs -> putStrLn $ intercalate "\n\n" $ map diagnose errs

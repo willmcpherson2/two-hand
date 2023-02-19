@@ -3,6 +3,8 @@ module TwoHand
     parse,
     check,
     eval,
+    collect,
+    diagnose,
     Source,
     SourceOf (..),
     Display (..),
@@ -351,3 +353,55 @@ instance Display Name where
   display = \case
     Name _ name -> toList name
     NameErr err -> display err
+
+--------------------------------------------------------------------------------
+
+collect :: Program -> [Err]
+collect = \case
+  Program _ defs -> concatMap collectDef defs
+  ProgramErr err -> [err]
+  _ -> []
+
+collectDef :: Def -> [Err]
+collectDef = \case
+  Def _ name exp -> collectName name <> collectExp exp
+  DefErr err -> [err]
+
+collectExp :: Exp -> [Err]
+collectExp = \case
+  FunE fun -> case fun of
+    Fun _ param body -> collectName param <> collectExp body
+    FunErr err -> [err]
+  AppE app -> case app of
+    App _ l r -> collectExp l <> collectExp r
+    AppErr err -> [err]
+  VarE var -> case var of
+    Var name -> collectName name
+    VarErr err -> [err]
+  ExpErr err -> [err]
+
+collectName :: Name -> [Err]
+collectName = \case
+  NameErr err -> [err]
+  _ -> []
+
+--------------------------------------------------------------------------------
+
+diagnose :: Err -> String
+diagnose = \case
+  ParensNoClose s -> mk s "parenthesis not closed"
+  BracketsNoClose s -> mk s "bracket not closed"
+  BracesNoClose s -> mk s "brace not closed"
+  ProgramNoMain s -> mk s "program has no main"
+  VarNotFound s -> mk s "variable not defined"
+  NoHands s -> mk s "no hands"
+  OneHand s -> mk s "one hand"
+  TooManyHands s -> mk s "too many hands"
+  DefExpected s -> mk s "expected definition"
+  NameExpected s -> mk s "expected identifier"
+  ExpExpected s -> mk s "expected expression"
+  where
+    mk s msg = "error: " <> msg <> "\n↓\n" <> lineOfSource s
+
+lineOfSource :: Source -> Source
+lineOfSource = takeWhile (/= '\n')
