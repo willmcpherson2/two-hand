@@ -25,7 +25,7 @@ In Two Hand, all expressions have two hands.
 
 Let's define something:
 
-[function.th](function.th)
+[function.th](examples/function.th)
 ```
 {main [x x]}
 ```
@@ -42,7 +42,7 @@ evaluates to itself.
 
 Let's extract that function:
 
-[application.th](application.th)
+[application.th](examples/application.th)
 ```
 {id [x x]}
 
@@ -58,7 +58,7 @@ And that's all.
 
 > But what about multiple arguments?
 
-[multiple-arguments.th](multiple-arguments.th)
+[multiple-arguments.th](examples/multiple-arguments.th)
 ```
 {const [x [y x]]}
 
@@ -69,7 +69,7 @@ Result: `[a a]`
 
 > But how do I write Hello World?
 
-[hello-world.th](hello-world.th)
+[hello-world.th](examples/hello-world.th)
 ```
 {main [hello [world [! !]]]}
 ```
@@ -78,7 +78,7 @@ Result: `[hello [world [! !]]]`
 
 > But what about `if`?
 
-[if.th](if.th)
+[if.th](examples/if.th)
 ```
 {true [x [y x]]}
 
@@ -95,7 +95,7 @@ Result: `[b b]`
 
 > But what about data structures?
 
-[list.th](list.th)
+[list.th](examples/list.th)
 ```
 {nil [_ [x x]]}
 
@@ -130,7 +130,7 @@ Result: `[x [y y]]`
 
 > But what about numbers?
 
-[numbers.th](numbers.th)
+[numbers.th](examples/numbers.th)
 ```
 {0 [f [x x]]}
 
