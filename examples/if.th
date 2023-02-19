@@ -1,0 +1,13 @@
+{true [x [y x]]}
+
+{false [x [y y]]}
+
+{not [x ((x false) true)]}
+
+{if [bool [a [b ((bool a) b)]]]}
+
+{a [a a]}
+
+{b [b b]}
+
+{main (((if (not true)) a) b)}
