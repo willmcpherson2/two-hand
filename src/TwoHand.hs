@@ -147,7 +147,7 @@ mkLexer open close ok err = runMaybeT $ do
   s <- lift $ arr id
   MaybeT $ try $ matchM open
   lift $ do
-    lexTree `endWith` matchM close >>= \case
+    lexTree `endWith` try (matchM close) >>= \case
       Nothing -> pure $ TreeErr $ err s
       Just inner -> pure $ ok s inner
 
@@ -198,11 +198,13 @@ parseDef = \case
     [_] -> DefErr $ OneHand s
     [name, exp] -> Def s (parseName name) (parseExp exp)
     _ -> DefErr $ TooManyHands s
+  TreeErr err -> DefErr err
   tree -> DefErr $ DefExpected (sourceOf tree)
 
 parseName :: Tree -> Name
 parseName = \case
   TreeName name -> name
+  TreeErr err -> NameErr err
   tree -> NameErr $ NameExpected (sourceOf tree)
 
 parseExp :: Tree -> Exp
@@ -218,6 +220,7 @@ parseExp = \case
     [param, body] -> Fun s (parseName param) (parseExp body)
     _ -> FunErr $ TooManyHands s
   TreeName name -> VarE $ Var name
+  TreeErr err -> ExpErr err
   tree -> ExpErr $ ExpExpected (sourceOf tree)
 
 --------------------------------------------------------------------------------
@@ -408,7 +411,8 @@ errMsg (prev, next) msg =
       lineNum = length $ lines prev
       columnNum = length left
       right = takeWhile (/= '\n') next
-   in intercalate "\n"
+   in intercalate
+        "\n"
         [ "error at " <> show lineNum <> ":" <> show columnNum,
           msg,
           arrowIndent <> "↓",
