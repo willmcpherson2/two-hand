@@ -1,3 +1,5 @@
+![Two Hand logo](two-hand.png)
+
 # Dependencies
 
 - cabal
