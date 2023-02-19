@@ -5,6 +5,7 @@ module TwoHand
     eval,
     collect,
     diagnose,
+    report,
     Source,
     SourceOf (..),
     Display (..),
@@ -427,3 +428,17 @@ errMsg (prev, next) msg =
           arrowIndent <> "↓",
           left <> right
         ]
+
+report :: String -> String
+report s = do
+  let lexed = lex ("", s)
+      parsed = parse lexed
+      checked = check parsed
+      errs = collect checked
+      result = eval checked
+  case errs of
+    [] -> case result of
+      ProgramResult exp -> display exp
+      ProgramErr err -> diagnose err
+      Program _ -> undefined
+    errs -> intercalate "\n\n" $ map diagnose errs
