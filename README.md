@@ -1,5 +1,9 @@
 ![Two Hand logo](two-hand.png)
 
+# Live Demo
+
+[willmcpherson2.com/two-hand-demo](http://willmcpherson2.com/two-hand-demo)
+
 # Dependencies
 
 - cabal
