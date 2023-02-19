@@ -33,18 +33,19 @@ import Parser (Parser)
 import qualified Parser as P
 import Prelude hiding (lex)
 
-type Source = (String, String)
+class Display a where
+  display :: a -> String
 
 class SourceOf a where
   sourceOf :: a -> Source
 
---------------------------------------------------------------------------------
+type Source = (String, String)
 
 data Err
   = ParensNoClose Source
   | BracketsNoClose Source
   | BracesNoClose Source
-  | ProgramNoMain Source
+  | ProgramNoMain
   | VarNotFound Source
   | NoHands Source
   | OneHand Source
@@ -54,12 +55,15 @@ data Err
   | ExpExpected Source
   deriving (Show)
 
+instance Display Err where
+  display err = "<" <> show err <> ">"
+
 instance SourceOf Err where
   sourceOf = \case
     ParensNoClose s -> s
     BracketsNoClose s -> s
     BracesNoClose s -> s
-    ProgramNoMain s -> s
+    ProgramNoMain -> ("", "")
     VarNotFound s -> s
     NoHands s -> s
     OneHand s -> s
@@ -67,8 +71,6 @@ instance SourceOf Err where
     DefExpected s -> s
     NameExpected s -> s
     ExpExpected s -> s
-
---------------------------------------------------------------------------------
 
 data Name
   = Name Source (NonEmpty Char)
@@ -79,12 +81,15 @@ instance Eq Name where
   Name _ a == Name _ b = a == b
   _ == _ = False
 
+instance Display Name where
+  display = \case
+    Name _ name -> toList name
+    NameErr err -> display err
+
 instance SourceOf Name where
   sourceOf = \case
     Name s _ -> s
     NameErr err -> sourceOf err
-
---------------------------------------------------------------------------------
 
 data Tree
   = Parens Source [Tree]
@@ -94,6 +99,17 @@ data Tree
   | TreeErr Err
   deriving (Show)
 
+instance Display [Tree] where
+  display = unlines . map display
+
+instance Display Tree where
+  display = \case
+    Parens _ trees -> "(" <> unwords (map display trees) <> ")"
+    Brackets _ trees -> "[" <> unwords (map display trees) <> "]"
+    Braces _ trees -> "{" <> unwords (map display trees) <> "}"
+    TreeName name -> display name
+    TreeErr err -> display err
+
 instance SourceOf Tree where
   sourceOf = \case
     Parens s _ -> s
@@ -101,8 +117,6 @@ instance SourceOf Tree where
     Braces s _ -> s
     TreeName name -> sourceOf name
     TreeErr err -> sourceOf err
-
---------------------------------------------------------------------------------
 
 lex :: Source -> [Tree]
 lex = P.parse lexTrees
@@ -116,7 +130,7 @@ lexTree = do
   lexParens
     <<|>> lexBrackets
     <<|>> lexBraces
-    <<|>> lexWord
+    <<|>> lexName
 
 skipSpaces :: Parser Source ()
 skipSpaces = void . star . try $ satisfyM isSpace
@@ -130,8 +144,8 @@ lexBrackets = mkLexer '[' ']' Brackets BracketsNoClose
 lexBraces :: Parser Source (Maybe Tree)
 lexBraces = mkLexer '{' '}' Braces BracesNoClose
 
-lexWord :: Parser Source (Maybe Tree)
-lexWord = runMaybeT $ do
+lexName :: Parser Source (Maybe Tree)
+lexName = runMaybeT $ do
   s <- lift $ arr id
   name <- MaybeT . plus . try . satisfyM $ \ch ->
     ch `notElem` "()[]{}" && not (isSpace ch)
@@ -151,10 +165,8 @@ mkLexer open close ok err = runMaybeT $ do
       Nothing -> pure $ TreeErr $ err s
       Just inner -> pure $ ok s inner
 
---------------------------------------------------------------------------------
-
 data Program
-  = Program Source [Def]
+  = Program [Def]
   | ProgramResult Exp
   | ProgramErr Err
   deriving (Show)
@@ -186,10 +198,41 @@ data Var
   | VarErr Err
   deriving (Show)
 
---------------------------------------------------------------------------------
+instance Display Program where
+  display = \case
+    Program defs -> unlines $ map display defs
+    ProgramResult exp -> display exp
+    ProgramErr err -> display err
+
+instance Display Def where
+  display = \case
+    Def _ name exp -> "{" <> display name <> " " <> display exp <> "}"
+    DefErr err -> display err
+
+instance Display Exp where
+  display = \case
+    FunE fun -> display fun
+    AppE app -> display app
+    VarE var -> display var
+    ExpErr err -> display err
+
+instance Display Fun where
+  display = \case
+    Fun _ param body -> "[" <> display param <> " " <> display body <> "]"
+    FunErr err -> display err
+
+instance Display App where
+  display = \case
+    App _ l r -> "(" <> display l <> " " <> display r <> ")"
+    AppErr err -> display err
+
+instance Display Var where
+  display = \case
+    Var name -> display name
+    VarErr err -> display err
 
 parse :: [Tree] -> Program
-parse trees = Program ("", "") (map parseDef trees)
+parse trees = Program $ map parseDef trees
 
 parseDef :: Tree -> Def
 parseDef = \case
@@ -223,11 +266,9 @@ parseExp = \case
   TreeErr err -> ExpErr err
   tree -> ExpErr $ ExpExpected (sourceOf tree)
 
---------------------------------------------------------------------------------
-
 check :: Program -> Program
 check = \case
-  Program s defs -> Program s (map (checkDef $ namesInDefs defs) defs)
+  Program defs -> Program $ map (checkDef $ namesInDefs defs) defs
   program -> program
 
 namesInDefs :: [Def] -> [Name]
@@ -265,13 +306,11 @@ checkVar names = \case
       else VarErr $ VarNotFound (sourceOf name)
   var -> var
 
---------------------------------------------------------------------------------
-
 eval :: Program -> Program
 eval = \case
-  Program s defs -> case resolve ('m' :| "ain") defs of
+  Program defs -> case resolve ('m' :| "ain") defs of
     Just exp -> ProgramResult $ evalExp defs exp
-    Nothing -> ProgramErr $ ProgramNoMain s
+    Nothing -> ProgramErr ProgramNoMain
   program -> program
 
 evalExp :: [Def] -> Exp -> Exp
@@ -300,68 +339,9 @@ resolve name = firstJust $ \case
   Def _ (Name _ defName) exp | name == defName -> Just exp
   _ -> Nothing
 
---------------------------------------------------------------------------------
-
-class Display a where
-  display :: a -> String
-
-instance Display Err where
-  display err = "<" <> show err <> ">"
-
-instance Display [Tree] where
-  display = unlines . map display
-
-instance Display Tree where
-  display = \case
-    Parens _ trees -> "(" <> unwords (map display trees) <> ")"
-    Brackets _ trees -> "[" <> unwords (map display trees) <> "]"
-    Braces _ trees -> "{" <> unwords (map display trees) <> "}"
-    TreeName name -> display name
-    TreeErr err -> display err
-
-instance Display Program where
-  display = \case
-    Program _ defs -> unlines $ map display defs
-    ProgramResult exp -> display exp
-    ProgramErr err -> display err
-
-instance Display Def where
-  display = \case
-    Def _ name exp -> "{" <> display name <> " " <> display exp <> "}"
-    DefErr err -> display err
-
-instance Display Exp where
-  display = \case
-    FunE fun -> display fun
-    AppE app -> display app
-    VarE var -> display var
-    ExpErr err -> display err
-
-instance Display Fun where
-  display = \case
-    Fun _ param body -> "[" <> display param <> " " <> display body <> "]"
-    FunErr err -> display err
-
-instance Display App where
-  display = \case
-    App _ l r -> "(" <> display l <> " " <> display r <> ")"
-    AppErr err -> display err
-
-instance Display Var where
-  display = \case
-    Var name -> display name
-    VarErr err -> display err
-
-instance Display Name where
-  display = \case
-    Name _ name -> toList name
-    NameErr err -> display err
-
---------------------------------------------------------------------------------
-
 collect :: Program -> [Err]
 collect = \case
-  Program _ defs -> concatMap collectDef defs
+  Program defs -> concatMap collectDef defs
   ProgramErr err -> [err]
   _ -> []
 
@@ -388,14 +368,12 @@ collectName = \case
   NameErr err -> [err]
   _ -> []
 
---------------------------------------------------------------------------------
-
 diagnose :: Err -> String
 diagnose = \case
   ParensNoClose s -> errMsg s "Parenthesis not closed."
   BracketsNoClose s -> errMsg s "Bracket not closed."
   BracesNoClose s -> errMsg s "Brace not closed."
-  ProgramNoMain _ ->
+  ProgramNoMain ->
     "Program has no main - nothing to evaluate.\n\
     \Define a main, e.g. {main [x x]}"
   VarNotFound s ->

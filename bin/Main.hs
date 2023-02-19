@@ -35,5 +35,5 @@ report s = do
     [] -> case result of
       ProgramResult exp -> putStrLn $ display exp
       ProgramErr err -> putStrLn $ diagnose err
-      Program _ _ -> undefined
+      Program _ -> undefined
     errs -> putStrLn $ intercalate "\n\n" $ map diagnose errs
