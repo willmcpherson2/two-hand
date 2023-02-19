@@ -1,6 +1,6 @@
 source-repository-package
   type: git
   location: https://github.com/willmcpherson2/parss
-  tag: efc05cbd7ad762d4727282e06160864ad2d6af41
+  tag: 4673e197e5036e370e53fffe962fcea72c28af62
 
 packages: ./two-hand.cabal

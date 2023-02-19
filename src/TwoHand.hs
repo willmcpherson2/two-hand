@@ -26,14 +26,14 @@ import Control.Monad (void)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.Char (isSpace)
-import Data.List.Extra (firstJust)
+import Data.List.Extra (firstJust, intercalate)
 import Data.List.NonEmpty (NonEmpty (..), toList)
 import Data.Maybe (fromJust, mapMaybe)
 import Parser (Parser)
 import qualified Parser as P
 import Prelude hiding (lex)
 
-type Source = String
+type Source = (String, String)
 
 class SourceOf a where
   sourceOf :: a -> Source
@@ -104,13 +104,13 @@ instance SourceOf Tree where
 
 --------------------------------------------------------------------------------
 
-lex :: String -> [Tree]
+lex :: Source -> [Tree]
 lex = P.parse lexTrees
 
-lexTrees :: Parser String [Tree]
+lexTrees :: Parser Source [Tree]
 lexTrees = star lexTree
 
-lexTree :: Parser String (Maybe Tree)
+lexTree :: Parser Source (Maybe Tree)
 lexTree = do
   skipSpaces
   lexParens
@@ -118,19 +118,19 @@ lexTree = do
     <<|>> lexBraces
     <<|>> lexWord
 
-skipSpaces :: Parser String ()
+skipSpaces :: Parser Source ()
 skipSpaces = void . star . try $ satisfyM isSpace
 
-lexParens :: Parser String (Maybe Tree)
+lexParens :: Parser Source (Maybe Tree)
 lexParens = mkLexer '(' ')' Parens ParensNoClose
 
-lexBrackets :: Parser String (Maybe Tree)
+lexBrackets :: Parser Source (Maybe Tree)
 lexBrackets = mkLexer '[' ']' Brackets BracketsNoClose
 
-lexBraces :: Parser String (Maybe Tree)
+lexBraces :: Parser Source (Maybe Tree)
 lexBraces = mkLexer '{' '}' Braces BracesNoClose
 
-lexWord :: Parser String (Maybe Tree)
+lexWord :: Parser Source (Maybe Tree)
 lexWord = runMaybeT $ do
   s <- lift $ arr id
   name <- MaybeT . plus . try . satisfyM $ \ch ->
@@ -142,7 +142,7 @@ mkLexer ::
   Char ->
   (Source -> [Tree] -> Tree) ->
   (Source -> Err) ->
-  Parser String (Maybe Tree)
+  Parser Source (Maybe Tree)
 mkLexer open close ok err = runMaybeT $ do
   s <- lift $ arr id
   MaybeT $ try $ matchM open
@@ -189,7 +189,7 @@ data Var
 --------------------------------------------------------------------------------
 
 parse :: [Tree] -> Program
-parse trees = Program "" (map parseDef trees)
+parse trees = Program ("", "") (map parseDef trees)
 
 parseDef :: Tree -> Def
 parseDef = \case
@@ -389,19 +389,28 @@ collectName = \case
 
 diagnose :: Err -> String
 diagnose = \case
-  ParensNoClose s -> mk s "parenthesis not closed"
-  BracketsNoClose s -> mk s "bracket not closed"
-  BracesNoClose s -> mk s "brace not closed"
+  ParensNoClose s -> errMsg s "parenthesis not closed"
+  BracketsNoClose s -> errMsg s "bracket not closed"
+  BracesNoClose s -> errMsg s "brace not closed"
   ProgramNoMain _ -> "warning: program has no main, nothing to evaluate"
-  VarNotFound s -> mk s "variable not defined"
-  NoHands s -> mk s "no hands"
-  OneHand s -> mk s "one hand"
-  TooManyHands s -> mk s "too many hands"
-  DefExpected s -> mk s "expected definition"
-  NameExpected s -> mk s "expected identifier"
-  ExpExpected s -> mk s "expected expression"
-  where
-    mk s msg = "error: " <> msg <> "\n↓\n" <> lineOfSource s
+  VarNotFound s -> errMsg s "variable not defined"
+  NoHands s -> errMsg s "no hands"
+  OneHand s -> errMsg s "one hand"
+  TooManyHands s -> errMsg s "too many hands"
+  DefExpected s -> errMsg s "expected definition"
+  NameExpected s -> errMsg s "expected identifier"
+  ExpExpected s -> errMsg s "expected expression"
 
-lineOfSource :: Source -> Source
-lineOfSource = takeWhile (/= '\n')
+errMsg :: Source -> String -> String
+errMsg (prev, next) msg =
+  let left = reverse $ takeWhile (/= '\n') prev
+      arrowIndent = replicate (length left) ' '
+      lineNum = length $ lines prev
+      columnNum = length left
+      right = takeWhile (/= '\n') next
+   in intercalate "\n"
+        [ "error at " <> show lineNum <> ":" <> show columnNum,
+          msg,
+          arrowIndent <> "↓",
+          left <> right
+        ]

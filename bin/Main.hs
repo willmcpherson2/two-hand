@@ -26,7 +26,7 @@ main =
 
 report :: String -> IO ()
 report s = do
-  let lexed = lex s
+  let lexed = lex ("", s)
       parsed = parse lexed
       checked = check parsed
       errs = collect checked
